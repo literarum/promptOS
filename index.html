@@ -7,9 +7,16 @@
   <meta name="theme-color" content="#171226">
   <meta name="color-scheme" content="dark">
   <meta http-equiv="Content-Security-Policy"
-    content="default-src 'none'; style-src https://gc.kes.v2.scr.kaspersky-labs.com wss://gc.kes.v2.scr.kaspersky-labs.com 'unsafe-inline'; script-src https://gc.kes.v2.scr.kaspersky-labs.com wss://gc.kes.v2.scr.kaspersky-labs.com 'unsafe-inline'; img-src https://gc.kes.v2.scr.kaspersky-labs.com wss://gc.kes.v2.scr.kaspersky-labs.com data: blob:; font-src 'none'; connect-src https://gc.kes.v2.scr.kaspersky-labs.com wss://gc.kes.v2.scr.kaspersky-labs.com 'none'; media-src 'none'; object-src 'none'; frame-src https://gc.kes.v2.scr.kaspersky-labs.com wss://gc.kes.v2.scr.kaspersky-labs.com 'none'; base-uri 'none'; form-action 'none'; child-src https://gc.kes.v2.scr.kaspersky-labs.com wss://gc.kes.v2.scr.kaspersky-labs.com;">
-  <title>PROMPT OS — локальная база AI-промптов</title>
-  <script type="text/javascript" src="https://gc.kes.v2.scr.kaspersky-labs.com/7EA5E9BB-55E1-4C31-9C21-4943DDFED2E4/main.js?attr=rlm5AExS5TV1w0ZPKwRfZw_MSTrdRDKefhGML505pc68Q5a0xc6E_rWL9im4OPVkXgfrazRRNV1KnPd5Pg-e4w3CChJetYVNyXAKxpj2-uFxhu8LApsbBQZmMkupnamRR6itiZTMt_GK_drspQcHJ-Ibvu_O92IpRbq-HtGh9PpPRY6Xd32FA4sql1fGs1ll2FBOYWhRFDCoGikaz5czM--XfBrMpTvt8sRoql9_CXpn0zTP5RU_zRSn-B_su6gb-TgyPip6H2iP-TejMFJn5JCMqKKHwP_3SX_30Q86uXHtzK85lDsGaSWI_rt9HX03zKLHJANjjpYLNX9SfWfO4Q" charset="UTF-8"></script><style>
+    content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'none'; connect-src 'self'; media-src 'none'; object-src 'none'; frame-src 'none'; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none';">
+  <meta name="application-name" content="PROMPT OS">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+<title>PROMPT OS — локальная база AI-промптов</title>
+<style>
     /* TOKENS */
     :root {
       --bg: #171226;
@@ -7213,6 +7220,44 @@
       }
     }
 
+  
+    /* V30 PRINCIPAL PWA / ACCESSIBILITY / QA */
+    :root {
+      --text-3: #938aa8;
+    }
+
+    .pwa-status {
+      align-items: flex-start;
+    }
+
+    .pwa-status .soft-btn {
+      flex: none;
+      margin-left: auto;
+    }
+
+    @media(max-width:520px) {
+      .pwa-status {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      .pwa-status .soft-btn {
+        width: 100%;
+        margin-left: 0;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .01ms !important;
+        scroll-behavior: auto !important;
+      }
+    }
+
   </style>
 </head>
 
@@ -7451,6 +7496,28 @@
     const isTypingTarget = t => t && (["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName) || t.isContentEditable);
     const cloneData = value => typeof structuredClone === "function" ? structuredClone(value) : JSON.parse(JSON.stringify(value));
     const errorText = e => String(e?.message || e || "неизвестная ошибка");
+    let deferredInstallPrompt = null, serviceWorkerState = "not-registered";
+    function isStandaloneApp() {return window.matchMedia?.("(display-mode: standalone)")?.matches || navigator.standalone === true}
+    function pwaStatusText() {
+      if (isStandaloneApp()) return "Запущено в отдельном окне приложения.";
+      if (location.protocol === "file:") return "Открыто через file://. Для установки как PWA нужен HTTPS или localhost/127.0.0.1. Перед переходом экспортируйте JSON: IndexedDB привязан к origin и автоматически не переносится.";
+      if (!window.isSecureContext) return "Для установки как приложения нужен HTTPS или localhost/127.0.0.1.";
+      if (deferredInstallPrompt) return "Браузер подтвердил installability. Можно установить приложение из этого окна или через меню браузера.";
+      const sw = serviceWorkerState === "ready" ? " Offline-кэш активен." : serviceWorkerState === "failed" ? " Service worker не зарегистрирован." : "";
+      return "PWA-конфигурация активна. В Яндекс Браузере используйте «Установить как приложение» и режим «отдельное окно»." + sw
+    }
+    async function promptPwaInstall() {
+      if (!deferredInstallPrompt) return false;
+      const event = deferredInstallPrompt; deferredInstallPrompt = null; await event.prompt();
+      const choice = await event.userChoice.catch(() => null); return choice?.outcome === "accepted"
+    }
+    async function registerServiceWorker() {
+      if (!("serviceWorker" in navigator) || location.protocol === "file:" || !window.isSecureContext) return false;
+      try {await navigator.serviceWorker.register("./sw.js", {scope: "./"}); await navigator.serviceWorker.ready; serviceWorkerState = "ready"; return true}
+      catch (e) {serviceWorkerState = "failed"; console.warn("PROMPT OS: service worker registration failed:", e); return false}
+    }
+    window.addEventListener("beforeinstallprompt", e => {e.preventDefault(); deferredInstallPrompt = e});
+    window.addEventListener("appinstalled", () => {deferredInstallPrompt = null; toast("PROMPT OS установлен как приложение")});
     function actionPoint(trigger, event) {
       const x = Number(event?.clientX) || 0, y = Number(event?.clientY) || 0;
       if (x || y) return {x, y};
@@ -8038,6 +8105,11 @@
     /* GLOBAL DEDUPLICATION */
     function invalidateDedup() {state.dedupEpoch++; state.dedupCache = null}
     function canonicalDuplicateText(s) {return String(s || "").normalize("NFKC").toLocaleLowerCase().replace(/\s+/g, " ").trim()}
+    function stablePromptHash(value) {
+      const str = String(value || ""); let hash = 0x811c9dc5;
+      for (let i = 0; i < str.length; i++) {hash ^= str.charCodeAt(i); hash = Math.imul(hash, 0x01000193)}
+      return (hash >>> 0).toString(36)
+    }
     function setOverlap(a, b) {
       if (!a.size || !b.size) return {intersection: 0, jaccard: 0, containment: 0};
       let small = a, big = b; if (a.size > b.size) {small = b; big = a} let intersection = 0; for (const x of small) if (big.has(x)) intersection++;
@@ -8423,6 +8495,61 @@
       assertImportCount("Промптов", data.prompts.length, IMPORT_LIMITS.prompts); assertImportCount("Фрагментов", Array.isArray(data.fragments) ? data.fragments.length : 0, IMPORT_LIMITS.fragments); assertImportCount("Оверлеев", Array.isArray(data.overlays) ? data.overlays.length : 0, IMPORT_LIMITS.overlays); assertImportCount("Коллекций", Array.isArray(data.collections) ? data.collections.length : 0, IMPORT_LIMITS.collections); assertImportCount("Версий", Array.isArray(data.versions) ? data.versions.length : 0, IMPORT_LIMITS.versions); assertImportCount("Настроек", Array.isArray(data.settings) ? data.settings.length : 0, IMPORT_LIMITS.settings);
       assertUniqueImportIds("prompts", data.prompts, fileName); assertUniqueImportIds("fragments", Array.isArray(data.fragments) ? data.fragments : [], fileName); assertUniqueImportIds("overlays", Array.isArray(data.overlays) ? data.overlays : [], fileName); assertUniqueImportIds("collections", Array.isArray(data.collections) ? data.collections : [], fileName); assertUniqueImportIds("versions", Array.isArray(data.versions) ? data.versions : [], fileName)
     }
+    function encodePromptOsMeta(value) {
+      const bytes = new TextEncoder().encode(JSON.stringify(value)); let binary = "";
+      for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "")
+    }
+    function decodePromptOsMeta(value) {
+      const raw = String(value || "").replace(/-/g, "+").replace(/_/g, "/"), padded = raw + "=".repeat((4 - raw.length % 4) % 4);
+      const binary = atob(padded), bytes = Uint8Array.from(binary, ch => ch.charCodeAt(0));
+      return JSON.parse(new TextDecoder().decode(bytes))
+    }
+    function unescapeMarkdownHeading(value) {return String(value || "").replace(/\\([\\`*_{}\[\]()<>#+.!|>-])/g, "$1")}
+    function firstMarkdownHeadingBlock(block, fallbackName) {
+      const rows = String(block || "").split(/\r?\n/), first = rows.findIndex(x => x.trim().length);
+      if (first >= 0 && /^#\s+/.test(rows[first])) {
+        const title = rows[first].replace(/^#\s+/, "").trim() || fallbackName;
+        return {title, content: rows.slice(0, first).concat(rows.slice(first + 1)).join("\n").trim()}
+      }
+      return {title: fallbackName, content: String(block || "").trim()}
+    }
+    function parsePromptOsMarkdown(text, fallbackName) {
+      const marker = /<!--\s*PROMPT-OS-META\s+([A-Za-z0-9_-]+)\s*-->/g, matches = [...String(text || "").matchAll(marker)];
+      if (matches.length) {
+        const out = [];
+        for (let i = 0; i < matches.length; i++) {
+          let meta; try {meta = decodePromptOsMeta(matches[i][1])} catch {continue}
+          const bodyStart = matches[i].index + matches[i][0].length, bodyEnd = i + 1 < matches.length ? matches[i + 1].index : text.length;
+          const block = text.slice(bodyStart, bodyEnd).replace(/^\s+/, "").replace(/\s+$/, "");
+          const parsed = firstMarkdownHeadingBlock(block, cleanInline(meta?.title, DATA_LIMITS.title, fallbackName));
+          out.push(normalizeImportedPrompt({
+            title: cleanInline(meta?.title, DATA_LIMITS.title, parsed.title),
+            description: String(meta?.description || ""),
+            content: parsed.content,
+            modelHint: String(meta?.modelHint || ""),
+            tags: Array.isArray(meta?.tags) ? meta.tags : [],
+            aliases: Array.isArray(meta?.aliases) ? meta.aliases : [],
+            favorite: !!meta?.favorite,
+            pinned: !!meta?.pinned
+          }))
+        }
+        if (out.length) return out
+      }
+
+      // Compatibility with Markdown produced by v29 and earlier: "# title ... --- # title".
+      const legacyBlocks = String(text || "").split(/\r?\n---\r?\n(?=\s*#\s+)/);
+      if (legacyBlocks.length > 1) return legacyBlocks.map((block, i) => {
+        const parsed = firstMarkdownHeadingBlock(block, `${fallbackName} ${i + 1}`);
+        // v29 appended a machine-generated hashtag-only line; do not import it as prompt content.
+        const body = parsed.content.replace(/\n(?:#[\p{L}\p{N}_-]+(?:\s+|$)){1,100}\s*$/u, "").trim();
+        return normalizeImportedPrompt({title: unescapeMarkdownHeading(parsed.title), content: body})
+      });
+
+      const parsed = firstMarkdownHeadingBlock(text, fallbackName);
+      return [normalizeImportedPrompt({title: parsed.title, content: parsed.content})]
+    }
+
     async function parseFiles(files, onProgress = null) {
       validateImportFiles(files); const prompts = [], fragments = [], overlays = [], collections = [], settings = [], versions = []; let done = 0;
       for (const f of files) {
@@ -8437,8 +8564,7 @@
           if (Array.isArray(data.settings)) settings.push(...data.settings);
           if (Array.isArray(data.versions)) for (const v of data.versions) {const row = sanitizeVersion(v); if (row.promptId) versions.push(row)}
         } else if (/\.(md|markdown)$/i.test(f.name)) {
-          const lines = text.split(/\r?\n/); let title = name, body = text; const i = lines.findIndex(x => /^#\s+/.test(x)); if (i >= 0) {title = lines[i].replace(/^#\s+/, "").trim() || name; body = lines.slice(0, i).concat(lines.slice(i + 1)).join("\n").trim()}
-          prompts.push(normalizeImportedPrompt({title, content: body}))
+          prompts.push(...parsePromptOsMarkdown(text, name))
         } else prompts.push(normalizeImportedPrompt({title: name, content: text}))
         done++; if (onProgress) onProgress(Math.round(done / files.length * 100), done, files.length); await new Promise(resolve => setTimeout(resolve, 0))
       }
@@ -8575,7 +8701,14 @@
     }
     function markdownHeading(value) {return cleanInline(value, DATA_LIMITS.title, "Без названия").replace(/([\\`*_{}\[\]()<>#+.!|>-])/g, "\\$1")}
     function markdownTag(value) {return cleanInline(value, DATA_LIMITS.tag).replace(/\s+/g, "-").replace(/[^\p{L}\p{N}_-]+/gu, "")}
-    function exportMarkdown(prompts) {const parts = prompts.map(p => `# ${markdownHeading(p.title)}\n\n${resolvePromptContent(p)}\n\n${(p.tags || []).map(markdownTag).filter(Boolean).map(t => "#" + t).join(" ")}\n`); download(`prompt-os-export-${new Date().toISOString().slice(0, 10)}.md`, parts.join("\n---\n\n"), "text/markdown"); toast("Экспорт Markdown создан")}
+    function exportMarkdown(prompts) {
+      const parts = prompts.map(p => {
+        const meta = encodePromptOsMeta({v: 1, title: p.title, description: p.description || "", modelHint: p.modelHint || "", tags: p.tags || [], aliases: p.aliases || [], favorite: !!p.favorite, pinned: !!p.pinned, flattened: true});
+        return `<!-- PROMPT-OS-META ${meta} -->\n# ${markdownHeading(p.title)}\n\n${resolvePromptContent(p).trim()}\n`
+      });
+      download(`prompt-os-export-${new Date().toISOString().slice(0, 10)}.md`, parts.join("\n"), "text/markdown");
+      toast("Markdown создан · фрагменты и оверлеи экспортированы как итоговый плоский текст")
+    }
 
     /* PROMPT SERVICE */
     function extractVariables(content) {const out = []; const seen = new Set(); const re = /\{\{\s*([\p{L}\p{N}_.-]{1,80})\s*\}\}/gu; let m; while ((m = re.exec(content))) {if (!seen.has(m[1])) {seen.add(m[1]); out.push(m[1])} } return out}
@@ -9040,7 +9173,7 @@
       $("#searchInput").placeholder = overlays ? "Поиск по оверлеям…" : fragments ? "Поиск по фрагментам…" : duplicates ? "Фильтр пар по названию, тексту, тегам, aliases…" : "Поиск по промптам, идеям, тегам…"; renderPills(); renderList(resetScroll)
     }
     function refreshAll() {renderSidebar(); refreshResults(false); renderInspector(); updateAppClasses()}
-    function listMetrics() {if (state.view.type === "duplicates") return innerWidth < 760 ? {h: 548, row: 560} : {h: 312, row: 324}; return state.compact ? {h: 120, row: 129} : {h: 174, row: 184}}
+    function listMetrics() {if (state.view.type === "duplicates") return innerWidth <= 760 ? {h: 548, row: 560} : {h: 312, row: 324}; return state.compact ? {h: 120, row: 129} : {h: 174, row: 184}}
     function renderList(resetScroll = false) {
       const vp = $("#libraryViewport"), sp = $("#listSpacer"), win = $("#cardWindow"), empty = $("#emptyState"), loading = $("#loadingState"); loading.classList.add("hidden"); vp.setAttribute("aria-busy", "false");
       if (resetScroll) vp.scrollTop = 0;
@@ -9420,8 +9553,9 @@
       })
     }
     function openSettings() {
-      const m = modalShell("Настройки", "Локальные настройки. Сетевые подключения запрещены политикой приложения.", true), wrap = el("div", "variable-form"); const storage = el("div", "related-item"), storageText = el("span", "", state.dbAvailable ? "IndexedDB активна · данные сохраняются локально в профиле браузера." : "IndexedDB недоступна · изменения живут только до закрытия вкладки."); storage.append(el("strong", "", "Хранилище"), storageText); wrap.append(storage); if (navigator.storage?.estimate) navigator.storage.estimate().then(x => {if (!storageText.isConnected) return; const used = Number(x.usage) || 0, quota = Number(x.quota) || 0; if (quota) storageText.textContent += ` Использовано ${Math.round(used / 1048576)} МБ из ${Math.round(quota / 1048576)} МБ доступной квоты.`}).catch(() => { });
-      const smartHelp = el("div", "related-item"); smartHelp.append(el("strong", "", "Умные коллекции"), el("span", "", "Динамические папки по тегам, модели, избранному, числу использований, давности, переменным и другим локальным признакам. Настройка — через ⋯ рядом с коллекцией.")); wrap.append(smartHelp); const keys = el("div", "related-item"); keys.append(el("strong", "", "Горячие клавиши Windows"), el("span", "", "Ctrl+K — палитра · / — поиск · N — новый промпт · Ctrl+C — копировать · E — редактировать · F — избранное · Пробел — предпросмотр · Esc — закрыть")); wrap.append(keys);
+      const m = modalShell("Настройки", "Рабочие данные хранятся локально. Сеть нужна только для загрузки файлов приложения с текущего origin.", true), wrap = el("div", "variable-form"); const storage = el("div", "related-item"), storageText = el("span", "", state.dbAvailable ? "IndexedDB активна · данные сохраняются локально в профиле браузера." : "IndexedDB недоступна · изменения живут только до закрытия вкладки."); storage.append(el("strong", "", "Хранилище"), storageText); wrap.append(storage); if (navigator.storage?.estimate) navigator.storage.estimate().then(x => {if (!storageText.isConnected) return; const used = Number(x.usage) || 0, quota = Number(x.quota) || 0; if (quota) storageText.textContent += ` Использовано ${Math.round(used / 1048576)} МБ из ${Math.round(quota / 1048576)} МБ доступной квоты.`}).catch(() => { });
+      const pwaRow = el("div", "related-item pwa-status"), pwaCopy = el("div"); pwaCopy.style.flex = "1"; pwaCopy.append(el("strong", "", "Режим приложения"), el("span", "", pwaStatusText())); pwaRow.append(pwaCopy); if (deferredInstallPrompt && !isStandaloneApp()) {const install = el("button", "soft-btn", "Установить"); install.type = "button"; install.onclick = async () => {const ok = await promptPwaInstall(); if (ok) closeOverlay()}; pwaRow.append(install)} wrap.append(pwaRow);
+      const smartHelp = el("div", "related-item"); smartHelp.append(el("strong", "", "Умные коллекции"), el("span", "", "Динамические папки по тегам, модели, избранному, числу использований, давности, переменным и другим локальным признакам. Настройка — через ⋯ рядом с коллекцией.")); wrap.append(smartHelp); const keys = el("div", "related-item"); keys.append(el("strong", "", "Горячие клавиши"), el("span", "", "Ctrl/Cmd+K — палитра · / — поиск · N — новый промпт · Ctrl/Cmd+C — копировать · E — редактировать · F — избранное · Пробел — предпросмотр · Esc — закрыть")); wrap.append(keys);
       const row = (title, desc, checked, onchange) => {const r = el("div", "related-item settings-switch-row"), text = el("div"); text.style.flex = "1"; text.append(el("strong", "", title), el("span", "", desc)); const c = el("button", "toggle-switch"); c.type = "button"; c.setAttribute("role", "switch"); c.setAttribute("aria-label", title); c.setAttribute("aria-checked", checked ? "true" : "false"); c.onclick = async () => {if (c.disabled) return; const prev = c.getAttribute("aria-checked") === "true", next = !prev; c.setAttribute("aria-checked", next ? "true" : "false"); c.disabled = true; try {await onchange(next)} catch (e) {c.setAttribute("aria-checked", prev ? "true" : "false"); toast("Настройка не применена: " + e.message, "error")} finally {c.disabled = false} }; r.append(text, c); return r};
       wrap.append(
         row("Компактные карточки", "Показывать больше промптов на экране.", state.compact, async v => {state.compact = v; await setSetting("compact", v); updateAppClasses(); renderList()}),
@@ -9429,7 +9563,7 @@
         row("Свернуть сайдбар", "Запомнить компактное состояние бокового меню на широком экране.", state.sidebarCollapsed, async v => {state.sidebarCollapsed = v; await setSetting("sidebarCollapsed", v); updateAppClasses()}),
         row("Скрыть инспектор", "Оставить библиотеке всю ширину окна.", state.inspectorHidden, async v => {state.inspectorHidden = v; await setSetting("inspectorHidden", v); updateAppClasses()})
       );
-      const exportMd = el("button", "soft-btn", "Экспортировать всё в Markdown"); exportMd.onclick = () => exportMarkdown([...state.prompts.values()].filter(p => !p.deletedAt)); wrap.append(exportMd);
+      const exportMd = el("button", "soft-btn", "Экспортировать всё в Markdown (плоский текст)"); exportMd.onclick = () => exportMarkdown([...state.prompts.values()].filter(p => !p.deletedAt)); wrap.append(exportMd);
       const privacy = el("div", "settings-danger-zone"), privacyCopy = el("div"); privacyCopy.append(el("strong", "", "Конфиденциальность переменных"), el("span", "", "Можно удалить локально сохранённые значения, историю и пресеты переменных, не затрагивая сами шаблоны.")); const clearVars = el("button", "danger-btn", "Очистить значения"); clearVars.type = "button"; clearVars.onclick = async () => {const ok = await confirmModal("Очистить сохранённые значения?", "Будут удалены текущие значения переменных, их история и пресеты во всех промптах. Тексты шаблонов останутся без изменений.", {confirmLabel: "Очистить значения"}); if (ok) await runUIAction(clearSavedVariableData, "Не удалось очистить значения")}; privacy.append(privacyCopy, clearVars); wrap.append(privacy);
       m.append(wrap); const a = el("div", "modal-actions"), close = el("button", "primary-btn", "Готово"); close.onclick = closeOverlay; a.append(close); mountModalActions(m, a)
     }
@@ -9628,6 +9762,7 @@
       setStaticIcons(); initCustomSelects(); initSearchGeometryObserver(); try {await loadPersistentState()} catch (e) {state.dbAvailable = false; state.db = null; toast("IndexedDB недоступна — данные сохраняются только до закрытия вкладки", "warn")}
       state.loading = false; $("#sortSelect").value = SORT_VALUES.has(state.sort) ? state.sort : "relevance"; syncCustomSelect($("#sortSelect")); syncSearchUI(); updateConnectivity(); updateAppClasses(); renderSidebar(); refreshResults(true); renderInspector(); syncBulkUI(); requestAnimationFrame(syncSearchGeometry);
       setInterval(() => {const timed = [...state.collections.values()].some(c => c.kind === "smart" && (c.rules || []).some(r => r.field === "lastUsedDays")); if (!timed) return; renderSidebar(); if (state.view.type === "smartCollection") refreshResults(false)}, 60000);
+      registerServiceWorker();
     }
 
     init().catch(e => {state.loading = false; document.documentElement.dataset.bootError = "true"; try {toast("Критическая ошибка запуска: " + errorText(e), "error", {duration: 12000})} catch { }; throw e});
